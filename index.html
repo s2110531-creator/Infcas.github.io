@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Infinity Fall - Game Landing Page</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #050302;
+            font-family: 'Inter', sans-serif;
+            color: white;
+        }
+
+        /* Typography */
+        .title-font { font-family: 'Oswald', sans-serif; }
+        
+        /* UI Layer Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none; /* Let clicks pass through to canvas if needed */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* Make interactive elements clickable */
+        .pointer-events-auto { pointer-events: auto; }
+
+        /* Glowing text effects */
+        .glow-text {
+            text-shadow: 0 0 20px rgba(255, 170, 0, 0.8), 0 0 40px rgba(255, 100, 0, 0.5);
+        }
+
+        /* Animations */
+        @keyframes pulse-opacity {
+            0%, 100% { opacity: 0.5; transform: translateY(0); }
+            50% { opacity: 1; transform: translateY(5px); }
+        }
+        .animate-scroll-indicator {
+            animation: pulse-opacity 2s infinite ease-in-out;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+    </style>
+
+    <!-- Import maps polyfill -->
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- Web Interface Overlay -->
+    <div id="ui-layer" class="p-6 md:p-12">
+        <!-- Header / Navigation -->
+        <header class="flex justify-between items-center pointer-events-auto">
+            <div class="text-3xl title-font font-bold tracking-widest text-orange-400 glow-text">
+                INFINITY<br>FALL
+            </div>
+            <nav class="hidden md:flex gap-8 text-sm font-semibold tracking-wider text-gray-300">
+                <a href="#" class="hover:text-white hover:text-orange-300 transition-colors duration-300">THE LORE</a>
+                <a href="#" class="hover:text-white hover:text-orange-300 transition-colors duration-300">MEDIA</a>
+                <a href="#" class="hover:text-white hover:text-orange-300 transition-colors duration-300">PRE-ORDER</a>
+            </nav>
+            <button class="md:hidden text-orange-400 p-2">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+            </button>
+        </header>
+
+        <!-- Center / Call to action (Optional, kept minimal to show the game) -->
+        <div class="flex-grow flex flex-col items-center justify-center text-center opacity-0">
+            <!-- Hidden layout spacer -->
+        </div>
+
+        <!-- Footer / Scroll Indicator -->
+        <footer class="flex flex-col items-center justify-end pb-8 pointer-events-auto cursor-pointer group">
+            <div class="animate-scroll-indicator flex flex-col items-center">
+                <span class="text-xs font-bold tracking-[0.3em] text-orange-200 mb-4 opacity-70 group-hover:opacity-100 transition-opacity">SCROLL TO ENTER</span>
+                <div class="w-6 h-10 border-2 border-orange-300/50 rounded-full flex justify-center p-1 group-hover:border-orange-300 transition-colors">
+                    <div class="w-1.5 h-2.5 bg-orange-400 rounded-full animate-bounce"></div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Application Logic -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // --- CONFIGURATION ---
+        const SPRITE_COLUMNS = 4; // Number of columns in the sprite sheet
+        const SPRITE_ROWS = 1;    // Number of rows in the sprite sheet
+        const FALL_SPEED = 15.0;  // How fast the castle moves up
+        const CASTLE_SCALE = 1.0; // Scale multiplier for the 3D map
+        
+        let width = window.innerWidth;
+        let height = window.innerHeight;
+
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        
+        // Deep orange-brown atmospheric background fog
+        const fogColor = new THREE.Color(0x2a1000);
+        scene.background = fogColor;
+        scene.fog = new THREE.FogExp2(fogColor, 0.04);
+
+        // --- CAMERA SETUP ---
+        // Position camera in the center of the shaft, looking slightly down or straight ahead
+        const camera = new THREE.Camera();
+        const persCamera = new THREE.PerspectiveCamera(60, width / height, 0.1, 100);
+        persCamera.position.set(0, 0, 8); // Offset on Z to look at character
+        scene.add(persCamera);
+
+        // --- RENDERER SETUP ---
+        const container = document.getElementById('canvas-container');
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Performance optimization
+        
+        // Realistic Shading & Atmospheric Lighting Requirements
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        container.appendChild(renderer.domElement);
+
+        // --- LIGHTING ---
+        // Warm ambient light for baseline visibility
+        const ambientLight = new THREE.AmbientLight(0x553322, 0.5); // Warm, dim baseline
+        scene.add(ambientLight);
+
+        // --- CHARACTER GROUP & SPRITE ---
+        const characterGroup = new THREE.Group();
+        // Keep character permanently at Y = 0 to prevent floating point issues in endless fall
+        characterGroup.position.set(0, 0, 0); 
+        scene.add(characterGroup);
+
+        // Character Glow: Strong, vibrant orange-yellow PointLight attached to character
+        const characterLight = new THREE.PointLight(0xffaa00, 50, 20); // Color, Intensity, Distance
+        characterLight.position.set(0, 0, 0.5); // Slightly in front of sprite to illuminate walls
+        characterLight.castShadow = true;
+        characterLight.shadow.bias = -0.001; // Prevent self-shadowing artifacts
+        characterLight.shadow.mapSize.width = 1024;
+        characterLight.shadow.mapSize.height = 1024;
+        characterGroup.add(characterLight);
+
+        // 2D Sprite Material and Animation Setup
+        const textureLoader = new THREE.TextureLoader();
+        let characterSprite;
+        let spriteTexture;
+
+        // Helper function to safely resolve URLs to prevent "URL is not valid" errors in Safari/Webkit iframes
+        function getSafeUrl(relativePath) {
+            try {
+                return new URL(relativePath, window.location.href).href;
+            } catch (e) {
+                console.warn("Failed to construct URL, returning relative path", e);
+                return relativePath;
+            }
+        }
+
+        // Use a generic placeholder texture immediately to avoid crashing if the URL fails entirely
+        function createCharacterFallback() {
+            const fallbackMat = new THREE.MeshBasicMaterial({ color: 0xffaa00, wireframe: true });
+            characterSprite = new THREE.Mesh(new THREE.PlaneGeometry(2, 3), fallbackMat);
+            characterSprite.position.z = 0;
+            characterGroup.add(characterSprite);
+        }
+
+        try {
+            const characterUrl = getSafeUrl('./assets/character.PNG');
+            textureLoader.load(characterUrl, (texture) => {
+                spriteTexture = texture;
+                spriteTexture.colorSpace = THREE.SRGBColorSpace;
+                spriteTexture.wrapS = THREE.RepeatWrapping;
+                spriteTexture.wrapT = THREE.RepeatWrapping;
+                
+                // Set repeat based on spritesheet grid
+                spriteTexture.repeat.set(1 / SPRITE_COLUMNS, 1 / SPRITE_ROWS);
+
+                // CRITICAL FIX: To prevent transparent background of sprite from cutting holes 
+                // into 3D geometry behind it, we set depthWrite: false and transparent: true.
+                const spriteMaterial = new THREE.MeshBasicMaterial({
+                    map: spriteTexture,
+                    transparent: true,
+                    depthWrite: false, // Prevents alpha clipping issues
+                    side: THREE.DoubleSide
+                });
+
+                // Adjust aspect ratio based on texture dimensions and column count
+                const imgAspect = (spriteTexture.image.width / SPRITE_COLUMNS) / (spriteTexture.image.height / SPRITE_ROWS);
+                const planeHeight = 2.5; 
+                const planeWidth = planeHeight * imgAspect;
+                
+                const spriteGeometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
+                characterSprite = new THREE.Mesh(spriteGeometry, spriteMaterial);
+                
+                // Add slightly in front of exactly Y=0 center
+                characterSprite.position.z = 0; 
+                characterGroup.add(characterSprite);
+            }, undefined, (err) => {
+                console.warn("Could not load character.PNG. Displaying placeholder.", err);
+                createCharacterFallback();
+            });
+        } catch (e) {
+            console.warn("Error initiating texture load, using fallback.", e);
+            createCharacterFallback();
+        }
+
+        // --- MAP LOADING & INFINITE LOOP LOGIC ---
+        const gltfLoader = new GLTFLoader();
+        let castle1, castle2;
+        let castleHeight = 30; // Fallback height
+        let mapsLoaded = false;
+
+        try {
+            const castleUrl = getSafeUrl('./assets/castle.glb');
+            gltfLoader.load(castleUrl, (gltf) => {
+                const originalCastle = gltf.scene;
+                originalCastle.scale.set(CASTLE_SCALE, CASTLE_SCALE, CASTLE_SCALE);
+
+                // Ensure Realistic Shading: Apply MeshStandardMaterial, Shadows
+                originalCastle.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                        
+                        // Force realistic shading with Standard material if not already
+                        if (!child.material.isMeshStandardMaterial) {
+                            const oldMat = child.material;
+                            child.material = new THREE.MeshStandardMaterial({
+                                map: oldMat.map || null,
+                                color: oldMat.color || 0x888888,
+                                roughness: 0.8,
+                                metalness: 0.2
+                            });
+                            if (oldMat.map) child.material.map.colorSpace = THREE.SRGBColorSpace;
+                        }
+                    }
+                });
+
+                // Calculate precise bounding box to stack the loops seamlessly
+                const box = new THREE.Box3().setFromObject(originalCastle);
+                castleHeight = box.max.y - box.min.y;
+
+                // Create two identical instances for the infinite loop stack
+                castle1 = originalCastle;
+                castle2 = originalCastle.clone();
+
+                // Stack them on the Y axis
+                castle1.position.y = 0;
+                castle2.position.y = -castleHeight;
+
+                scene.add(castle1);
+                scene.add(castle2);
+                
+                mapsLoaded = true;
+                console.log(`Castle loaded. Loop height set to: ${castleHeight}`);
+            }, undefined, (err) => {
+                console.warn("Could not load castle.glb. Spawning a fallback procedural tunnel.", err);
+                createProceduralFallback();
+            });
+        } catch (e) {
+             console.warn("Error initiating GLTF load, spawning fallback.", e);
+             createProceduralFallback();
+        }
+
+        function createProceduralFallback() {
+            const tunnelGroup = new THREE.Group();
+            const geo = new THREE.CylinderGeometry(5, 5, 40, 16, 1, true);
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: 0x444444, 
+                roughness: 0.9, 
+                metalness: 0.1,
+                side: THREE.BackSide 
+            });
+            const tunnelMesh = new THREE.Mesh(geo, mat);
+            tunnelMesh.receiveShadow = true;
+            
+            // Add some "bricks" for visual speed reference
+            for(let i=0; i<50; i++) {
+                const brickGeo = new THREE.BoxGeometry(1, 1, 1);
+                const brickMat = new THREE.MeshStandardMaterial({ color: 0x773311 });
+                const brick = new THREE.Mesh(brickGeo, brickMat);
+                const angle = Math.random() * Math.PI * 2;
+                const radius = 4.5;
+                brick.position.set(Math.cos(angle)*radius, (Math.random() - 0.5) * 40, Math.sin(angle)*radius);
+                brick.rotation.y = -angle;
+                brick.castShadow = true;
+                brick.receiveShadow = true;
+                tunnelGroup.add(brick);
+            }
+            tunnelGroup.add(tunnelMesh);
+
+            castleHeight = 40;
+            castle1 = tunnelGroup;
+            castle2 = tunnelGroup.clone();
+            castle1.position.y = 0;
+            castle2.position.y = -castleHeight;
+            scene.add(castle1);
+            scene.add(castle2);
+            mapsLoaded = true;
+        }
+
+        // --- RESIZE HANDLER ---
+        window.addEventListener('resize', () => {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            persCamera.aspect = width / height;
+            persCamera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        });
+
+        // --- ANIMATION VARIABLES ---
+        const clock = new THREE.Clock();
+        let currentFrame = 0;
+        let frameDisplayTime = 0.08; // Sprite sheet animation speed (sec per frame)
+        let frameTimer = 0;
+
+        // --- MAIN RENDER LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // 1. Sprite Sheet Animation (Horizontal Shift)
+            if (spriteTexture) {
+                frameTimer += delta;
+                if (frameTimer >= frameDisplayTime) {
+                    frameTimer = 0;
+                    currentFrame = (currentFrame + 1) % SPRITE_COLUMNS;
+                    // Update UV offset for current frame
+                    spriteTexture.offset.x = currentFrame * (1 / SPRITE_COLUMNS);
+                }
+            }
+
+            // 2. Infinite Map Looping Logic
+            if (mapsLoaded && castle1 && castle2) {
+                // Move environment UP to simulate character falling DOWN
+                castle1.position.y += FALL_SPEED * delta;
+                castle2.position.y += FALL_SPEED * delta;
+
+                // Seamless Reset: Once a piece moves entirely past the viewport (above character), 
+                // snap it back to the bottom of the other piece.
+                if (castle1.position.y >= castleHeight) {
+                    castle1.position.y = castle2.position.y - castleHeight;
+                }
+                if (castle2.position.y >= castleHeight) {
+                    castle2.position.y = castle1.position.y - castleHeight;
+                }
+            }
+
+            // 3. Procedural Juice: Camera Shake & Character Wobble
+            // Tiny rhythmic X/Z camera shake for intense wind drag illusion
+            persCamera.position.x = Math.sin(time * 45) * 0.015;
+            persCamera.position.y = Math.cos(time * 30) * 0.015;
+            
+            // Subtle randomized Z-axis wobble on the character to simulate terminal velocity
+            if (characterSprite) {
+                characterGroup.position.z = Math.sin(time * 8) * 0.15;
+                characterGroup.position.x = Math.cos(time * 5) * 0.1;
+                // Slight rotation wiggle
+                characterGroup.rotation.z = Math.sin(time * 12) * 0.03;
+            }
+
+            // Billboard effect: Ensure character group strictly faces the camera
+            // characterGroup.lookAt(persCamera.position); 
+            // (Note: Since camera is fixed at +Z and looks at origin, identity rotation is usually fine, 
+            // but lookAt ensures it if camera moves).
+
+            // Render Scene
+            renderer.render(scene, persCamera);
+        }
+
+        // Start Loop
+        animate();
+    </script>
+</body>
+</html>
